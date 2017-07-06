@@ -38,5 +38,6 @@ if updatecount > 0:
     resultsdf = resultsdf.append(updatedf, ignore_index=True)
     resultsdf = resultsdf[~resultsdf.duplicated(subset='matchid',keep='last')]
     resultsdf = resultsdf[~resultsdf['matchid'].isin(blacklist)]
+    resultsdf = resultsdf.reset_index()
     resultsdf.to_pickle('results.gz') 
 

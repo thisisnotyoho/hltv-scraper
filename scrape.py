@@ -20,9 +20,22 @@ def get_url(url, timeout=120):
 # matchType=(Lan|Online)
 # content=(highlights|demo|vod|stats)
 # map=(de_cache|de_mirage|...)
-#
+# event=[event id]
+# team = [team id]
+# player = [player id]
 def get_results(offset=0,**kwargs):
     url = 'https://www.hltv.org/results?'
+    if offset > 0: url += 'offset=' + str(offset)
+    for x in kwargs: url+='&' + x + '=' + str(kwargs[x])
+    return get_url(url)
+
+# startDate, endDate
+# eventType = (MAJOR,INTLLAN,REGIONALLAN,ONLINE,LOCALLAN,OTHER)
+# prizeMin, prizeMax
+# team = [team id]
+# player = [player id]
+def get_events_archive(offset=0,**kwargs):
+    url = 'https://www.hltv.org/events/archive?'
     if offset > 0: url += 'offset=' + str(offset)
     for x in kwargs: url+='&' + x + '=' + str(kwargs[x])
     return get_url(url)
@@ -228,30 +241,102 @@ def parse_results(rawdata):
     results = bs.select('div.result-con')
     return [parse_result_con(r) for r in results]
 
-def get_result_counts(rawdata):
+def get_pagination(rawdata):
     soup = bs4.BeautifulSoup(rawdata,'lxml')
     txt = soup.select('div.pagination-top')[0].text.strip()
     split = txt.split(' ')
     ret = [int(x) for x in split[0::2]]
     return ret
 
+def parse_events_archive(rawdata):
+    soup = bs4.BeautifulSoup(rawdata, 'lxml')
+    events = soup.select('a.small-event')
+    ret = []
+    for event in events:
+        ev = {}
+        ev['id'] = event['href'].split('/')[-2]
+        td = event.find_all('td')
+        ev['name'] = td[0].text.strip()
+        ev['teams'] = td[1].text.strip()
+        ev['prize'] = td[2].text.strip()
+        ev['prize'] = ev['prize'].replace('$','')
+        ev['prize'] = ev['prize'].replace(',','')
+        if(ev['prize'] == 'Other'):
+            ev['prize'] = -1
+        else:
+            ev['prize'] = int(ev['prize'])
+        ev['type'] = td[3].text.strip()
+        span = td[4].find_all('span')
+        ev['flag'] = span[0].img['title']
+        ev['loc'] = span[1].text.strip()[:-2]
+        ev['timestamp'] = int(span[4]['data-unix']) // 1000
+        ret.append(ev)
+    return ret
+
+def get_generic_daterange(datefrom, 
+                          dateto,
+                          _get,
+                          _parse):
+    stringfrom = datefrom.strftime('%Y-%m-%d')
+    stringto = dateto.strftime('%Y-%m-%d')
+    rawdata = _parse(startDate=stringfrom,endDate=stringto)
+    tmpdata = rawdata
+    *junk,total=get_pagination(rawdata)
+    results = []
+    with cf.ThreadPoolExecutor(max_workers=10) as ex:
+        scrp = lambda x : _get(offset=x,
+                               startDate=resultsfrom,
+                               endDate=resultsto)
+        for rawdata in ex.map(scrp,range(100,total,100)):
+            *junk,totaltmp = get_pagination(rawdata)
+            if(totaltmp != total): 
+                raise ValueError('Results changed while downloading')
+            results += _parse(rawdata)
+
+    tmp = parse_results(tmpdata)
+    results = tmp + results
+    return results
+
 def get_results_daterange(datefrom, dateto):
     resultsfrom = datefrom.strftime('%Y-%m-%d')
     resultsto = dateto.strftime('%Y-%m-%d')
     rawdata = get_results(startDate=resultsfrom,endDate=resultsto)
-    *junk,total=get_result_counts(rawdata)
+    tmpdata = rawdata
+    *junk,total=get_pagination(rawdata)
     results = []
     with cf.ThreadPoolExecutor(max_workers=10) as ex:
         scrp = lambda x : get_results(offset=x,
                                       startDate=resultsfrom,
                                       endDate=resultsto)
         for rawdata in ex.map(scrp,range(100,total,100)):
-            *junk,totaltmp = get_result_counts(rawdata)
+            *junk,totaltmp = get_pagination(rawdata)
             if(totaltmp != total): 
                 raise ValueError('Results changed while downloading')
             results += parse_results(rawdata)
 
-    tmp = parse_results(rawdata)
+    tmp = parse_results(tmpdata)
+    results = tmp + results
+    return results
+    
+
+def get_events_daterange(datefrom, dateto):
+    resultsfrom = datefrom.strftime('%Y-%m-%d')
+    resultsto = dateto.strftime('%Y-%m-%d')
+    rawdata = get_events_archive(startDate=resultsfrom,endDate=resultsto)
+    tmpdata = rawdata
+    *junk,total=get_pagination(rawdata)
+    results = []
+    with cf.ThreadPoolExecutor(max_workers=10) as ex:
+        scrp = lambda x : get_events_archive(offset=x,
+                                             startDate=resultsfrom,
+                                             endDate=resultsto)
+        for rawdata in ex.map(scrp,range(50,total,50)):
+            *junk,totaltmp = get_pagination(rawdata)
+            if(totaltmp != total): 
+                raise ValueError('Results changed while downloading')
+            results += parse_events_archive(rawdata)
+
+    tmp = parse_events_archive(tmpdata)
     results = tmp + results
     return results
     
@@ -269,7 +354,7 @@ def parse_result_con(result):
     entry['score'] = result.find('td',attrs={'class' : 'result-score'}).text
     event = result.find('td',attrs={'class' : 'event' })
     entry['eventname'] = event.img['title']
-    entry['eventid'] = event.img['src'].split('/')[:-4]
+    entry['eventid'] = event.img['src'].split('/')[-1][:-4]
     if(entry['eventid'] == 'noLogo'): entry['eventid'] = None
     entry['extra']  = result.find('td', attrs={'class':'star-cell'}).text
     entry['extra'] = entry['extra'].strip()
