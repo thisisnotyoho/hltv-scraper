@@ -223,18 +223,39 @@ for match in scrape.resultsdf['matchid']:
             print('failed on {}' % match)
 
 """
-def parse_result(rawdata):
-    bs = bs4(rawdata)
-    ret = []
-    results = bs.find_all('div',attrs={'class':'result-con'})
-    for result in results:
-        ret.append(parse_result_con(result))
-    return ret
+def parse_results(rawdata):
+    bs = bs4.BeautifulSoup(rawdata, 'lxml')
+    results = bs.select('div.result-con')
+    return [parse_result_con(r) for r in results]
 
-def get_result_counts(soup):
+def get_result_counts(rawdata):
+    soup = bs4.BeautifulSoup(rawdata,'lxml')
     txt = soup.select('div.pagination-top')[0].text.strip()
     split = txt.split(' ')
-    return split[0::2]
+    ret = [int(x) for x in split[0::2]]
+    return ret
+
+def get_results_daterange(datefrom, dateto):
+    resultsfrom = datefrom.strftime('%Y-%m-%d')
+    resultsto = dateto.strftime('%Y-%m-%d')
+    rawdata = get_results(startDate=resultsfrom,endDate=resultsto)
+    *junk,total=get_result_counts(rawdata)
+    results = []
+    with cf.ThreadPoolExecutor(max_workers=10) as ex:
+        scrp = lambda x : get_results(offset=x,
+                                      startDate=resultsfrom,
+                                      endDate=resultsto)
+        for rawdata in ex.map(scrp,range(100,total,100)):
+            *junk,totaltmp = get_result_counts(rawdata)
+            if(totaltmp != total): 
+                raise ValueError('Results changed while downloading')
+            results += parse_results(rawdata)
+
+    tmp = parse_results(rawdata)
+    results = tmp + results
+    return results
+    
+
 
 
 def parse_result_con(result):

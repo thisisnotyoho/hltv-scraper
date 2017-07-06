@@ -18,6 +18,8 @@ length = len(missing)
 if(length == 0):
     print('matches are already up to date')
     quit()
+else:
+    print('Fetching %i matches' % length)
 
 missing_chunks=[missing[i:i+CHUNK_SIZE] for i in range(0,length,CHUNK_SIZE)]
 
@@ -28,7 +30,7 @@ try:
         tmpdf = pa.DataFrame(tmp)
         matchesdf = matchesdf.append(tmpdf,ignore_index=True)
         count += CHUNK_SIZE
-        print("%i of %i" % (max(count,length),length)
+        print("%i of %i" % (min(count,length),length))
 except Exception as exc:
     print('Received exception %s, saving data and exiting' % exc)
 finally:
