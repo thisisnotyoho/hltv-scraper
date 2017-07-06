@@ -95,10 +95,11 @@ def parse_match_statstable(soup):
 
 def parse_match(rawdata,matchid):
     bs = bs4.BeautifulSoup(rawdata, 'lxml')
+    if(bs.select('div.error-500')):
+        raise ParseError('Server Failed to get matchpage')
     content = bs.select('div.contentCol')[0]
     if(content.div['class'][0] != 'match-page'):
-        print('failed on matchid %s' % matchid)
-        return []
+        raise ParseError('Not a match page, cannot parse')
     allmaps = {}
     allmaps['mid'] = matchid
     ret = []
@@ -148,9 +149,11 @@ def parse_match(rawdata,matchid):
     maps=content.select('div.mapholder')
     for m in maps:
         tmp = parse_map(m)
-        if(tmp['results'] != ''):
+        if(tmp['results'] != '' and tmp['map'] in statsmap):
             mid='#'+statsmap[tmp['map']]+'-content'
-            statscontent=content.select(mid)[0]
+            statscontent=content.select(mid)
+            if(len(statscontent) < 1): continue
+            statscontent = statscontent[0]
             statstables = [parse_match_statstable(x) for x in
                             statscontent.select('table')]
             statstables = statstables[0] + statstables[1]
@@ -182,10 +185,9 @@ def get_parse_matches(matchids,workers=5):
             matchid = future_to_matchid[future]
             try:
                 data = future.result()
+                ret += parse_match(data,matchid)
             except Exception as exc:
                 print('%s generated an exception %s' % (matchid,exc))
-            else:
-                ret += parse_match(data,matchid)
 
     return ret
 """
@@ -230,31 +232,24 @@ def parse_result(rawdata):
     return ret
 
 def get_result_counts(soup):
-    page = soup.find('div',attrs={'class':'pagination-top'})
-    txt = page.text.strip()
-    idx = txt.index('-')-1
-    idx2 = txt.index('of')
-    if(idx<0 or idx2<0): return None
-    start = int(txt[0:idx])
-    end = int(txt[idx+1:idx2-2])
-    count = int(txt[idx2:])
-    return [start,end,count]
+    txt = soup.select('div.pagination-top')[0].text.strip()
+    split = txt.split(' ')
+    return split[0::2]
 
 
 def parse_result_con(result):
     entry = {}
     entry['timestamp'] = int(result['data-zonedgrouping-entry-unix'])//1000
-    entry['link']=result.a['href']
-    entry['matchid'] = entry['link'].split('/')[2]
+    entry['matchid'] = result.a['href'].split('/')[2]
     for i in [1,2]:
         teamtag = result.find('div',attrs={'class' : 'line-align team'+str(i)})
         entry['name' + str(i)] = teamtag.text.strip()
-        entry['logo' + str(i)] = teamtag.img['src']
         entry['id' + str(i)] = teamtag.img['src'].split('/')[-1]
     entry['score'] = result.find('td',attrs={'class' : 'result-score'}).text
     event = result.find('td',attrs={'class' : 'event' })
     entry['eventname'] = event.img['title']
-    entry['eventlogo'] = event.img['src']
+    entry['eventid'] = event.img['src'].split('/')[:-4]
+    if(entry['eventid'] == 'noLogo'): entry['eventid'] = None
     entry['extra']  = result.find('td', attrs={'class':'star-cell'}).text
     entry['extra'] = entry['extra'].strip()
     return entry

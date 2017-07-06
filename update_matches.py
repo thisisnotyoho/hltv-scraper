@@ -13,7 +13,12 @@ matchesdf = pa.read_pickle('matches.gz')
 mids=matchesdf['mid'].unique()
 missing = list(resultsdf[~resultsdf['matchid'].isin(mids)]['matchid'])
 
+
 length = len(missing)
+if(length == 0):
+    print('matches are already up to date')
+    quit()
+
 missing_chunks=[missing[i:i+CHUNK_SIZE] for i in range(0,length,CHUNK_SIZE)]
 
 count = 0
@@ -23,7 +28,7 @@ try:
         tmpdf = pa.DataFrame(tmp)
         matchesdf = matchesdf.append(tmpdf,ignore_index=True)
         count += CHUNK_SIZE
-        print("%i of %i" % (count,length))
+        print("%i of %i" % (max(count,length),length)
 except Exception as exc:
     print('Received exception %s, saving data and exiting' % exc)
 finally:
