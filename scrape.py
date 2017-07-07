@@ -279,21 +279,21 @@ def get_generic_daterange(datefrom,
                           _parse):
     stringfrom = datefrom.strftime('%Y-%m-%d')
     stringto = dateto.strftime('%Y-%m-%d')
-    rawdata = _parse(startDate=stringfrom,endDate=stringto)
+    rawdata = _get(startDate=stringfrom,endDate=stringto)
     tmpdata = rawdata
     *junk,total=get_pagination(rawdata)
     results = []
     with cf.ThreadPoolExecutor(max_workers=10) as ex:
         scrp = lambda x : _get(offset=x,
-                               startDate=resultsfrom,
-                               endDate=resultsto)
+                               startDate=stringfrom,
+                               endDate=stringto)
         for rawdata in ex.map(scrp,range(100,total,100)):
             *junk,totaltmp = get_pagination(rawdata)
             if(totaltmp != total): 
                 raise ValueError('Results changed while downloading')
             results += _parse(rawdata)
 
-    tmp = parse_results(tmpdata)
+    tmp = _parse(tmpdata)
     results = tmp + results
     return results
 
@@ -340,8 +340,6 @@ def get_events_daterange(datefrom, dateto):
     results = tmp + results
     return results
     
-
-
 
 def parse_result_con(result):
     entry = {}

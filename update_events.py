@@ -19,12 +19,12 @@ now = datetime.date.today() + datetime.timedelta(1)
 events = scrape.get_events_daterange(newest,now)
 
 updatedf = pa.DataFrame(events)
-updatecount = len(updatedf[~updatedf['matchid'].isin(eventsdf['matchid'])])
+updatecount = len(updatedf[~updatedf['id'].isin(eventsdf['id'])])
 print('updating %i records' % updatecount)
 if updatecount > 0:
     eventsdf = eventsdf.append(updatedf, ignore_index=True)
-    eventsdf = eventsdf[~eventsdf.duplicated(subset='matchid',keep='last')]
-    eventsdf = eventsdf[~eventsdf['matchid'].isin(blacklist)]
+    eventsdf = eventsdf[~eventsdf.duplicated(subset='id',keep='last')]
+    eventsdf = eventsdf[~eventsdf['id'].isin(blacklist)]
     eventsdf = eventsdf.reset_index()
     eventsdf.to_pickle('events.gz') 
 
