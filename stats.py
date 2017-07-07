@@ -16,12 +16,12 @@ def get_teams_from_results():
     team2 = resultsdf[['id2','name2','timestamp']]
     team1.columns = ['id','name','timestamp']
     team2.columns = ['id','name','timestamp']
-    teams = teams1.append(team2,ignore_index=True)
+    teams = team1.append(team2,ignore_index=True)
     grouped = teams.groupby('id')
-    names = grouped.names.unique()
+    names = grouped.name.unique()
     names = names.apply(lambda x : x[0])
-    timestart = tmp.timestamp.min()
-    timeend = tmp.timestamp.max()
+    timestart = grouped.timestamp.min()
+    timeend = grouped.timestamp.max()
     ret = pa.DataFrame({'names':names,'start':timestart,'end':timeend})
     ret = ret[['names','start','end']]
     ret['end'] = ret['end'].apply(lambda x :
@@ -30,23 +30,25 @@ def get_teams_from_results():
                         datetime.datetime.fromtimestamp(x))
     return ret
    
-def get_matchstats_from_matches():
+def get_matchstats_from_matches(matches=matchesdf):
     ret = []
-    tmp = zip(list(matchesdf['mid']),
-              list(matchesdf['stats']),
-              list(matchesdf['timestamp']))
-    for x in tmp
+    tmp = zip(list(matches['mid']),
+              list(matches['stats']),
+              list(matches['time']),
+              list(matches['map'])
+    for x in tmp:
         if(len(x[1]) < 1): continue
         for i in x[1]:
             i.update({'mid':x[0]})
-            i.update({'timestamp':x[2]})
+            i.update({'time':x[2]})
+            i.update({'map':x[3]})
             ret.append(i)
     retdf = pa.DataFrame(ret)
-    retdf['timestamp'] = \
-            retdf['timestamp'].apply(datetime.datetime.fromtimestamp)
+    retdf['time'] = \
+            retdf['time'].apply(datetime.datetime.fromtimestamp)
     retdf['name'] = retdf['players'].apply(lambda x: x.split('\n')[0])
     retdf['nick'] = retdf['players'].apply(lambda x: x.split('\n')[1])
     del(retdf['players'])
     return retdf
 
-
+def get_team_from_matchstats

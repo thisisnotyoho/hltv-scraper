@@ -174,6 +174,7 @@ def parse_match(rawdata,matchid):
             tmp['sid'] = statsmap[tmp['map']]
             for x in allmaps:
                 tmp.update({x:allmaps[x]})
+            del(tmp['results'])
             mapscontainer.append(tmp)
     
 
