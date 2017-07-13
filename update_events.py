@@ -25,6 +25,6 @@ if updatecount > 0:
     eventsdf = eventsdf.append(updatedf, ignore_index=True)
     eventsdf = eventsdf[~eventsdf.duplicated(subset='id',keep='last')]
     eventsdf = eventsdf[~eventsdf['id'].isin(blacklist)]
-    eventsdf = eventsdf.reset_index()
+    eventsdf.reset_index(drop=True,inplace=True)
     eventsdf.to_pickle('events.gz') 
 
