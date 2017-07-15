@@ -50,7 +50,7 @@ def parse_match_team(t):
     ret = {}
     ret['name'] = t.a.img['alt']
     ret['id'] = t.a['href'].split('/')[-2]
-    score = t.select('a + div')[0]
+    score = t.select_one('a + div')
     ret['score'] = score.text
     ret['finish'] = score['class'][0]
     return ret
@@ -58,25 +58,29 @@ def parse_match_team(t):
 
 def parse_map(soup):
     ret = {}
-    ret['map'] = soup.select('.mapname')[0].text.strip()
+    ret['map'] = soup.select_one('.mapname').text.strip()
     results = soup.select('span')
-    results = [x for x in results if '(' not in x.text]
-    results = [x for x in results if ')' not in x.text]
-    results = [x for x in results if x.text != '']
-    results = [x for x in results if ':' not in x.text]
-    results = [x for x in results if ';' not in x.text]
+    tmp = []
     def flatten(x):
         if 'class' in x.attrs: return x['class'][0] + ':' + x.text
         else: return 'ot:' + x.text
-    results = [flatten(x) for x in results]
-    ret['t1'] = ';'.join(results[0::2])
-    ret['t2'] = ';'.join(results[1::2])
+    for res in results:
+        if res.text == '': continue
+        found = False
+        for c in '():;':
+            if c in res.text:
+                found = True
+                break
+        if(found): continue
+        tmp.append(flatten(res))
+
+    ret['t1'] = ';'.join(tmp[0::2])
+    ret['t2'] = ';'.join(tmp[1::2])
     results = soup.select('div.results')
     if len(results) > 0:
         ret['results']=results[0].text.strip()
     else:
         ret['results']=''
-
     return ret
 
 def parse_match_statstable(soup):
@@ -85,40 +89,37 @@ def parse_match_statstable(soup):
         raise ParseError('should be a table')
     tmp = soup.parent.parent.select('div.dynamic-map-name-full')
     statsmap = {x['id']:x.text.strip() for x in tmp}
-    headerrow = soup.select('tr.header-row')[0]
+    headerrow = soup.select_one('tr.header-row')
     names=[x['class'][0] for x in headerrow.select('td')]
     datarows = soup.select('tr + tr')
-    lazy = lambda k : [{k[1:]:x.text.strip()} for y in datarows 
-                            for x in y.select(k)] 
     ret['id'] = soup.parent['id'][:-8]
-    ret['teamid'] = headerrow.select('a.team')[0]['href'].split('/')[-2]
-    #ret['team'] = headerrow.select('a.team')[0].text.strip()
-    tmp = [{'pid':x.select('td.players a')[0]['href'].split('/')[-2]}
-                 for x in datarows]
-    data = [lazy('.'+x) for x in names]
-    data = [list(x) for x in zip(tmp,*data)]
-    data = [{k:v for d in l for k,v in d.items()} for l in data]
-    #[d.update({'id':ret['id']}) for d in data]
-    [x.update({'sid':ret['id']}) for x in data]
-    #[x.update({'map':statsmap[ret['id']]}) for x in data]
-    [x.update({'tid':ret['teamid']}) for x in data]
-    #[x.update({'team':ret['team']}) for x in data]
-    #tmp = [{x[0]:list(x[1:])} for x in data]
+    ret['teamid'] = headerrow.select_one('a.team')['href'].split('/')[-2]
+    data = []
+    for row in datarows:
+        entry = {}
+        entry['sid'] = ret['id']
+        entry['tid'] = ret['teamid']
+        #entry['map'] = statsmap[ret['id']]
+        #entry['team'] = ret['team']
+        for name in names:
+            entry[name] = row.select_one('.' + name).text.strip()
+        entry['pid'] = row.select_one('td.players a')['href'].split('/')[-2]
+        data.append(entry)
     return data
 
 def parse_match(rawdata,matchid):
     bs = bs4.BeautifulSoup(rawdata, 'lxml')
     if(bs.select('div.error-500')):
         raise ParseError('Server Failed to get matchpage')
-    content = bs.select('div.contentCol')[0]
+    content = bs.select_one('div.contentCol')
     if(content.div['class'][0] != 'match-page'):
         raise ParseError('Not a match page, cannot parse')
     allmaps = {}
     allmaps['mid'] = matchid
     ret = []
-    teamsbox=content.select('div.teamsBox')[0]
-    team1 = teamsbox.select('div.team1-gradient')[0]
-    team2 = teamsbox.select('div.team2-gradient')[0]
+    teamsbox=content.select_one('div.teamsBox')
+    team1 = teamsbox.select_one('div.team1-gradient')
+    team2 = teamsbox.select_one('div.team2-gradient')
     tmp = parse_match_team(team1)
     allmaps.update({x+'1': tmp[x] for x in tmp})
     tmp = parse_match_team(team2)
@@ -173,13 +174,14 @@ def parse_match(rawdata,matchid):
             tmp['stats'] = statstables
             tmp['sid'] = statsmap[tmp['map']]
             for x in allmaps:
+                if x in tmp: continue
                 tmp.update({x:allmaps[x]})
             del(tmp['results'])
             mapscontainer.append(tmp)
     
 
     statstables = []
-    tmp = content.select('#all-content')[0]
+    tmp = content.select_one('#all-content')
     a = tmp.select('table')
     allmaps['stats'] = parse_match_statstable(a[0]) + \
                       parse_match_statstable(a[1])
@@ -192,16 +194,28 @@ def get_parse_matches(matchids,workers=5):
     if type(matchids) is not list:
         raise TypeError("matchids must be list") 
     
-    with cf.ThreadPoolExecutor(max_workers=workers) as executor:
-        future_to_matchid = {executor.submit(get_match,matchid):matchid
-            for matchid in matchids}
-        for future in cf.as_completed(future_to_matchid):
-            matchid = future_to_matchid[future]
+    with cf.ProcessPoolExecutor(max_workers=workers) as exp:
+        pfutures = {}
+        with cf.ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_matchid = {executor.submit(get_match,matchid):matchid
+                for matchid in matchids}
+            for future in cf.as_completed(future_to_matchid):
+                matchid = future_to_matchid[future]
+                try:
+                    data = future.result()
+                    pfutures[exp.submit(parse_match,data,matchid)] = matchid
+                except Exception as exc:
+                    print('%s generated an exception during download %s' 
+                                % (matchid,exc))
+
+        for future in cf.as_completed(pfutures):
             try:
                 data = future.result()
-                ret += parse_match(data,matchid)
+                ret += data
             except Exception as exc:
-                print('%s generated an exception %s' % (matchid,exc))
+                matchid = pfutures[future]
+                print('%s generated an exception during parsing %s' %
+                        (matchid,exc))
 
     return ret
 """
@@ -244,7 +258,7 @@ def parse_results(rawdata):
 
 def get_pagination(rawdata):
     soup = bs4.BeautifulSoup(rawdata,'lxml')
-    txt = soup.select('div.pagination-top')[0].text.strip()
+    txt = soup.select_one('div.pagination-top').text.strip()
     split = txt.split(' ')
     ret = [int(x) for x in split[0::2]]
     return ret
@@ -273,30 +287,6 @@ def parse_events_archive(rawdata):
         ev['timestamp'] = int(span[4]['data-unix']) // 1000
         ret.append(ev)
     return ret
-
-def get_generic_daterange(datefrom, 
-                          dateto,
-                          _get,
-                          _parse):
-    stringfrom = datefrom.strftime('%Y-%m-%d')
-    stringto = dateto.strftime('%Y-%m-%d')
-    rawdata = _get(startDate=stringfrom,endDate=stringto)
-    tmpdata = rawdata
-    *junk,total=get_pagination(rawdata)
-    results = []
-    with cf.ThreadPoolExecutor(max_workers=10) as ex:
-        scrp = lambda x : _get(offset=x,
-                               startDate=stringfrom,
-                               endDate=stringto)
-        for rawdata in ex.map(scrp,range(100,total,100)):
-            *junk,totaltmp = get_pagination(rawdata)
-            if(totaltmp != total): 
-                raise ValueError('Results changed while downloading')
-            results += _parse(rawdata)
-
-    tmp = _parse(tmpdata)
-    results = tmp + results
-    return results
 
 def get_results_daterange(datefrom, dateto):
     resultsfrom = datefrom.strftime('%Y-%m-%d')

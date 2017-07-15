@@ -1,7 +1,7 @@
 import pandas as pa
 import scrape
 
-CHUNK_SIZE=50
+CHUNK_SIZE=500
 
 resultsdf = pa.read_pickle('results.gz')
 
