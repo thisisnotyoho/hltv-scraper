@@ -14,6 +14,14 @@ def get_url(url, timeout=120):
     with urllib.request.urlopen(req, timeout=timeout) as fd:
         return fd.read().decode()
 
+def download_demo(demoid):
+    url = 'https://www.hltv.org/download/demo/' + str(demoid)
+    req = urllib.request.Request(url)
+    req.add_header('User-Agent','Mozilla/5.0')
+    with urllib.request.urlopen(req,timeout=120) as fd:
+        return fd.read()
+
+
 # Some helpful extra args:
 # startDate=YYYY-MM-DD
 # endDate=YYYY-MM-DD
