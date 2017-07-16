@@ -21,45 +21,57 @@ class DemoProcessor(object):
         self.dd = demodump.DemoDump()
         self.dd.open(filename)
         self.processed = {}
-        self.events = []        
+        self.events = {}        
         self.dd.register_on_netmsg(NETMSG.svc_GameEvent, self.on_event)
         
     def on_event(self,cmd,data):
-        gameevent = NETMSG.CSVCMSG_GameEvent()
+        gameevent = NETMSG.CSVCMsg_GameEvent()
         gameevent.ParseFromString(data)
-        name = demo.descriptors[gameevent.eventid][1]
-        if(name == 'player_footstep') return
-        event = {'EVENTNAME':name}
-        keys = demo.descriptors[gameevent.eventid][2]
+        name = self.dd.descriptors[gameevent.eventid][1]
+        if(name == 'player_footstep'): return
+        event = {}
+        keys =  self.dd.descriptors[gameevent.eventid][2]
         for i in range(0,len(keys)):
             keytype=_GAMEEVENT_TYPES[keys[i][1]+1]
             event[keys[i][0]]=getattr(gameevent.keys[i],keytype)
-        event['TICK'] = demo.current_tick
-        if(event['NAME'] == 'round_poststart'):
+        event['TICK'] = self.dd.current_tick
+        if(name == 'round_start'):
             event['PLAYERINFO'] = self.dd.playerinfo.copy()
-        self.events.append(event)
-    
+        if name in self.events:
+            self.events[name].append(event)
+        else:
+            self.events[name] = [event]
 
 def process_demofile(filename):
     dp = DemoProcessor(filename)
-    dp.dd.dump()
+    try:
+        dp.dd.dump()
+    except:
+        pass
     ret = {}
     ret['filename'] = filename
-    ret['events'] = events
-    ret['header'] = dd.demofile.demoheader
-    print(filename)
+    ret['events'] = dp.events
+    ret['header'] = dp.dd.demofile.demoheader
+
     return ret
 
 results = []
-if name == '__main__':
-    with cf.ProcessPoolExecutor(workers=6) as ex:
+if __name__ == '__main__':
+    with cf.ProcessPoolExecutor(max_workers=6) as ex:
         tmpfiles = os.walk('demos/')
         files = [os.path.join(x[0],y) for x in tmpfiles 
                                       for y in x[2] 
                                       if x[2] != [] 
                                       if y.endswith('.dem')]
-        for result in ex.map(process_demofile,files,chunksize=5):
-            results += result
+        future_to_file = {ex.submit(process_demofile,f):f for f in files}
+        for future in cf.as_completed(future_to_file):
+            try:
+                res = future.result()
+                results.append(res)
+                print(future_to_file[future])
+            except Exception as exc:
+                filename = future_to_file[future]
+                print('%s generated exception %s' % (filename, exc))
 
     with gzip.open('processed_results.gz','wb') as fd:
         pickle.dump(results,fd)
