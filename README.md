@@ -18,3 +18,6 @@ into a pandas DataFrame directly.  This file requires the pandas package to be i
 
 ## update_*.py
 these files update the gz files using scrape.py and a bunch of DataFrame gibberish
+
+## example.py
+stupid data tricks
